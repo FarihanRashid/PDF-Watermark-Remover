@@ -22,6 +22,8 @@ removal and only touches pixels when it has to, with protection for dark ink so 
 - **Erase boxes:** blank fixed regions on every page (works on text, vectors and scanned image pixels).
 - **Raster output:** output DPI, deterministic *smooth* upscaling (capped at 3x the scan's own DPI in safe mode),
   optional AI upscaling (Real-ESRGAN family via `spandrel`), greyscale and lossless PNG output.
+- **Batch + drag & drop:** queue many PDFs (add files, add a folder, or drop files/folders onto the window). Each result
+  is saved in a subfolder (default `cleaned`) next to its source PDF; existing files are never overwritten.
 - **Never freezes:** processing runs in a separate worker process; the window stays responsive and Cancel works.
 - **Safety:** memory-aware banding/tiling, automatic retry on GPU out-of-memory, CPU fallback, RAM-based DPI limits,
   per-page error isolation, Cancel button, atomic output writing. See [Safety](#safety-features).
@@ -70,13 +72,20 @@ Models (5 MB or 67 MB) download from the Real-ESRGAN GitHub releases on first us
 | Standalone .exe (optional) | `.\build_exe.ps1` (3-5 GB because PyTorch + CUDA are bundled; untested on all setups) |
 
 ### GUI workflow
-1. Pick the input PDF (the output name `_clean.pdf` is suggested).
-2. Pick a **preset**, then click **Preview** on a page with a watermark over equations.
-3. Tweak settings if needed, preview 2-3 different pages, then **Process whole PDF**.
+1. Add PDFs: **Add files...**, **Add folder...** (every PDF directly inside it), or drag & drop files/folders onto the window.
+2. Select one in the list, pick a **preset**, then click **Preview** on a page with a watermark over equations.
+3. Tweak settings, preview 2-3 pages, then **Process all**. Results go to `<folder of each PDF>\cleaned\` (the
+   subfolder name is editable). Use **Open output** afterwards. One failing file never stops the batch; problems
+   are listed at the end. Re-running never overwrites: you get `name (2).pdf`.
+
+Drag & drop uses `tkinterdnd2` (in requirements.txt). If it is missing the buttons still work. Windows blocks
+dragging from an Explorer window running as administrator into a normal app - run both at the same level.
 
 ### CLI examples
 ```powershell
 python -m wm_remover in.pdf out.pdf                                   # balanced preset
+python -m wm_remover --batch D:\papers --preset vector                # every PDF in the folder -> D:\papers\cleaned\
+python -m wm_remover --batch a.pdf b.pdf D:\more --out-name done     # files and folders, custom subfolder
 python -m wm_remover in.pdf out.pdf --preset print-600
 python -m wm_remover in.pdf out.pdf --repeat-dark --erase "0.25,0.94,0.75,0.99"
 python -m wm_remover in.pdf out.pdf --out-dpi 1200 --upscale smooth --gray
@@ -134,6 +143,7 @@ white papers (3x smaller). AI upscalers can change digits and thin symbols; `smo
 | Zooming in is still blurry | Raster pages cannot get sharper than their source DPI. Use **vector**. |
 | Output looks soft | Output quality: PNG on, Output DPI >= scan DPI, keep tone cleaning off |
 | Output file is huge | Greyscale on, lower Output DPI, or JPEG (small-file preset) |
+| Drag & drop does nothing | `pip install tkinterdnd2` and restart; don't drag from an Explorer window running as administrator. |
 | AI mode does nothing | `pip install spandrel torchvision` (see above); the app falls back to `smooth` and reports why |
 
 ## Known limits
@@ -160,3 +170,6 @@ Launch.bat  Launch_debug.bat  Create-Shortcut.ps1  build_exe.ps1  run.py
 requirements.txt  models/ (downloaded AI weights, git-ignored)
 ```
 
+## License
+Add a LICENSE file of your choice before publishing (e.g. MIT). Real-ESRGAN weights are downloaded from their
+original repository and carry their own license.

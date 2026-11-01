@@ -14,8 +14,10 @@ def main():
     from .raster import MODELS
     B = argparse.BooleanOptionalAction
     ap = argparse.ArgumentParser(prog="wm_remover", description="Remove watermarks from PDFs (GPU accelerated).")
-    ap.add_argument("src")
+    ap.add_argument("src", nargs="?")
     ap.add_argument("dst", nargs="?")
+    ap.add_argument("--batch", nargs="+", metavar="PATH", help="PDF files and/or folders; results go to a subfolder next to each PDF")
+    ap.add_argument("--out-name", default="cleaned", help="batch output subfolder name (default: cleaned)")
     ap.add_argument("--inspect", type=int, metavar="PAGE", help="describe what is in the bottom 12%% of PAGE (1-based) and exit")
     ap.add_argument("--preset", choices=list(PRESETS), default="balanced")
     ap.add_argument("--raster", choices=["auto", "always", "never"])
@@ -32,19 +34,25 @@ def main():
     for flag in ("structural", "multipage", "levels", "repeated-text", "repeat-dark", "png", "gray", "safe", "vectorize"):
         ap.add_argument(f"--{flag}", action=B, default=None)
     a = vars(ap.parse_args())
-    if a["inspect"]:
+    if a["inspect"] and a["src"]:
         from .vector import inspect_page
         print(inspect_page(a["src"], a["inspect"] - 1))
         return
-    if not a["dst"]:
-        ap.error("dst is required unless --inspect is used")
+    if not a["batch"] and not (a["src"] and a["dst"]):
+        ap.error("give SRC DST, or --batch PATH [PATH ...], or SRC --inspect PAGE")
     rename = {"erase": "erase_boxes", "ink": "ink_t", "cut": "wm_cut", "repeated_text": "remove_repeated_text",
               "png": "use_png"}
     over = {rename.get(k, k): v for k, v in a.items()
-            if k not in ("src", "dst", "preset", "inspect") and v is not None}
+            if k not in ("src", "dst", "preset", "inspect", "batch", "out_name") and v is not None}
     o = replace(PRESETS[a["preset"]], **over)
-    rep = process(a["src"], a["dst"], o, lambda f, m: print(f"{f:5.0%} {m}"))
-    print(rep)
+    show = lambda f, m: print(f"{f:5.0%} {m}")
+    if a["batch"]:
+        from .pipeline import process_batch
+        summ = process_batch(a["batch"], o, a["out_name"], show)
+        for r in summ["results"]:
+            print(r["status"].upper(), r["file"], r.get("output") or r.get("error") or "")
+        return
+    print(process(a["src"], a["dst"], o, show))
 
 
 if __name__ == "__main__":

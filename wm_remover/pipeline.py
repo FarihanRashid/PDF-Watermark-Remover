@@ -348,6 +348,69 @@ def process(src, dst, o, progress=lambda f, m: None, cancel=lambda: False):
     return report
 
 
+def collect_pdfs(paths):
+    """Expand files and folders (top level only) into a de-duplicated, ordered list of PDF paths."""
+    files = []
+    for p in paths:
+        p = os.path.abspath(p)
+        if os.path.isdir(p):
+            for f in sorted(os.listdir(p), key=str.lower):
+                fp = os.path.join(p, f)
+                if os.path.isfile(fp) and f.lower().endswith(".pdf") and not f.startswith("~$"):
+                    files.append(fp)
+        elif os.path.isfile(p) and p.lower().endswith(".pdf"):
+            files.append(p)
+    return list(dict.fromkeys(files))
+
+
+def out_path_for(src, out_name="cleaned"):
+    """<folder of src>/<out_name>/<name>.pdf ; never overwrites (adds ' (2)', ' (3)' ... if the name exists)."""
+    folder = os.path.join(os.path.dirname(os.path.abspath(src)), out_name)
+    os.makedirs(folder, exist_ok=True)
+    stem = os.path.splitext(os.path.basename(src))[0]
+    cand, k = os.path.join(folder, stem + ".pdf"), 2
+    while os.path.exists(cand):
+        cand = os.path.join(folder, f"{stem} ({k}).pdf")
+        k += 1
+    return cand
+
+
+def process_batch(paths, o, out_name="cleaned", progress=lambda f, m: None, cancel=lambda: False):
+    """Process many PDFs. One bad file never stops the batch; every result is reported."""
+    files = collect_pdfs(paths)
+    if not files:
+        raise ValueError("No PDF files found.")
+    n, results = len(files), []
+    for k, src in enumerate(files):
+        name = os.path.basename(src)
+        if cancel():
+            results += [{"file": os.path.basename(f), "status": "skipped"} for f in files[k:]]
+            break
+
+        def prog(f, m, k=k, name=name):
+            progress((k + f) / n, f"File {k + 1}/{n}: {name} - {m}")
+        try:
+            dst = out_path_for(src, out_name)
+            rep = process(src, dst, o, prog, cancel)
+            if rep.get("cancelled"):
+                results += [{"file": os.path.basename(f), "status": "skipped"} for f in files[k:]]
+                break
+            results.append({"file": name, "status": "ok", "output": dst,
+                            "warnings": rep.get("warnings", []), "failed_pages": rep.get("failed_pages", [])})
+        except Exception as e:
+            results.append({"file": name, "status": "error", "error": f"{type(e).__name__}: {str(e)[:200]}"})
+            raster.release()
+    return {"files": n, "out_name": out_name, "results": results}
+
+
+def worker_batch(paths, o, out_name, q, cancel_ev):
+    """Batch version of worker(): runs in its own process so the window stays responsive."""
+    try:
+        q.put(("done", process_batch(paths, o, out_name, lambda f, m: q.put(("p", f, m)), cancel_ev.is_set)))
+    except BaseException as e:
+        q.put(("err", f"{type(e).__name__}: {e}"))
+
+
 def worker(src, dst, o, q, cancel_ev):
     """Runs in a separate process so the window never freezes (PyMuPDF holds the GIL during big saves)."""
     try:

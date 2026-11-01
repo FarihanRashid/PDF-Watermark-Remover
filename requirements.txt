@@ -3,6 +3,7 @@ numpy
 Pillow
 psutil
 scikit-image
+tkinterdnd2
 # PyTorch with CUDA is installed separately (see README):
 #   pip install torch --index-url https://download.pytorch.org/whl/cu124
 # Optional AI upscaling (see README):  pip install spandrel
